@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# analyze-emario - Emario Header Analyzer wrapper
+# Analyzes .emario/.omario encrypted file headers for Mario ransomware version and crypto metadata.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+    source "${SCRIPT_DIR}/venv/bin/activate"
+fi
+cd "$SCRIPT_DIR"
+exec python3 -m tools.emario_header_analyzer.cli "$@"

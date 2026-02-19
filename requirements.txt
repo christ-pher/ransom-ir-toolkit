@@ -1,0 +1,6 @@
+# Core dependencies (vendored in vendor/ for offline install)
+cryptography>=41.0.0    # X25519 (Curve25519 ECDH), SHA-256 key derivation
+rich>=13.0.0            # Terminal formatting, progress bars, tables
+
+# Optional (for White Rabbit PE binary analysis)
+# pefile>=2023.2.7

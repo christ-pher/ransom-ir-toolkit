@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# carve-vmdk - VMDK Data Carver wrapper
+# Extracts recoverable files from unencrypted VMDK regions.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+    source "${SCRIPT_DIR}/venv/bin/activate"
+fi
+cd "$SCRIPT_DIR"
+exec python3 -m tools.vmdk_data_carver.cli "$@"

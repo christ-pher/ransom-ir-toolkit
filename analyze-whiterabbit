@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# analyze-whiterabbit - White Rabbit Analyzer wrapper
+# Parses White Rabbit artifacts for IOC extraction and intelligence.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+    source "${SCRIPT_DIR}/venv/bin/activate"
+fi
+cd "$SCRIPT_DIR"
+exec python3 -m tools.white_rabbit_analyzer.cli "$@"

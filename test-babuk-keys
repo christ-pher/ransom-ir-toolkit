@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# test-babuk-keys - Babuk Key Tester wrapper
+# Tests known Babuk ECDH private keys against Mario-encrypted files.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+    source "${SCRIPT_DIR}/venv/bin/activate"
+fi
+cd "$SCRIPT_DIR"
+exec python3 -m tools.babuk_key_tester.cli "$@"
