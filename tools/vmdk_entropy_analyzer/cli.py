@@ -100,8 +100,9 @@ def _handle_batch(args: argparse.Namespace) -> int:
 
     if not results:
         print_finding(
-            "No VMDK files found",
-            {"Directory": str(directory)},
+            "No evidence files found",
+            {"Directory": str(directory),
+             "Searched": ".vmdk, .vbk, .vib, .vrb, .emario, .omario"},
             severity="warning",
         )
         return 1
@@ -353,11 +354,11 @@ def _build_parser() -> argparse.ArgumentParser:
     # -- batch --------------------------------------------------------------
     batch_parser = subparsers.add_parser(
         "batch",
-        help="Scan all VMDK files in a directory.",
+        help="Scan all evidence files in a directory (VMDKs, Veeam backups, Mario-encrypted).",
     )
     batch_parser.add_argument(
         "directory",
-        help="Directory containing VMDK files to analyse.",
+        help="Directory containing evidence files to analyse (.vmdk, .vbk, .vib, .vrb, .emario, .omario).",
     )
     batch_parser.add_argument(
         "--output-dir",

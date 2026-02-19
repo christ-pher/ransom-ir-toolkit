@@ -118,7 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Restrict carving to specific file categories.  "
             "Options: document, image, archive, database, email, "
-            "filesystem, windows, virtualization."
+            "filesystem, windows, virtualization, quickbooks."
         ),
     )
 

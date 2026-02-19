@@ -625,6 +625,64 @@ def find_vmdk_files(directory: Path) -> list[Path]:
     return vmdk_files
 
 
+# ---------------------------------------------------------------------------
+# Evidence file discovery (VMDKs, Veeam backups, Mario-encrypted)
+# ---------------------------------------------------------------------------
+
+# Supported evidence file extensions for batch scanning.
+EVIDENCE_EXTENSIONS: set[str] = {
+    ".vmdk", ".vbk", ".vib", ".vrb",   # Original formats
+    ".emario", ".omario",               # Mario-encrypted
+}
+
+
+def find_evidence_files(directory: Path) -> list[Path]:
+    """Find all scannable evidence files in a directory (non-recursively).
+
+    Matches VMDKs, Veeam backup files (.vbk/.vib/.vrb), and
+    Mario-encrypted files (.emario/.omario).  Also matches compound
+    extensions like ``.vbk.emario``.
+
+    Parameters
+    ----------
+    directory:
+        Directory to scan.
+
+    Returns
+    -------
+    list[Path]
+        Sorted list of resolved paths to evidence files found in
+        *directory*.
+
+    Raises
+    ------
+    FileNotFoundError
+        If *directory* does not exist.
+    ValueError
+        If *directory* is not a directory.
+    """
+    directory = Path(directory)
+
+    if not directory.exists():
+        raise FileNotFoundError(f"Directory does not exist: {directory}")
+    if not directory.is_dir():
+        raise ValueError(f"Path is not a directory: {directory}")
+
+    evidence_files: list[Path] = []
+    for entry in sorted(directory.iterdir()):
+        if not entry.is_file():
+            continue
+        # Check final suffix and all suffixes for compound extensions
+        suffixes_lower = {s.lower() for s in entry.suffixes}
+        if suffixes_lower & EVIDENCE_EXTENSIONS:
+            evidence_files.append(entry.resolve())
+
+    logger.info(
+        "Found %d evidence file(s) in %s", len(evidence_files), directory
+    )
+    return evidence_files
+
+
 def parse_vmdk(path: Path) -> VMDKInfo:
     """Parse a VMDK file and return a comprehensive analysis result.
 

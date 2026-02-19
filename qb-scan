@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# qb-scan - QuickBooks Content Scanner wrapper
+# Search encrypted evidence files for QuickBooks data indicators.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+    source "${SCRIPT_DIR}/venv/bin/activate"
+fi
+cd "$SCRIPT_DIR"
+exec python3 -m tools.quickbooks_scanner.cli "$@"

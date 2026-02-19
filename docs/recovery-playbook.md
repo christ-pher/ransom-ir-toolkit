@@ -8,6 +8,7 @@
 | **White Rabbit (FIN8)** | Windows machine encrypted, `.scrypt` extensions |
 | **ESXi Hosts** | Rebooted/reinstalled - no memory forensics possible |
 | **White Rabbit Machine** | Powered off - RAM not available |
+| **Veeam Backups** | Veeam .vbk/.vib/.vrb files may exist (encrypted by Mario) |
 | **Backups** | No VM backups survived; some old data on separate server |
 | **Public Decryptors** | None available for either variant (confirmed) |
 
@@ -15,9 +16,12 @@
 
 ## Recovery Priority Matrix
 
+**Primary target: QuickBooks company data (.QBW, .QBB, .TLG, .IIF)**
+
 | Priority | Approach | Target | Probability | Effort |
 |---|---|---|---|---|
-| **P0** | Intermittent encryption data carving | Mario-encrypted VMDKs | **HIGH** | Medium |
+| **P0** | Intermittent encryption data carving + **QuickBooks scan** | Mario-encrypted VMDKs **and Veeam backups** | **HIGH** | Medium |
+| **P0a** | Veeam backup scanning | Mario-encrypted .vbk/.vib/.vrb files | **HIGH** | Medium |
 | **P1** | Filesystem metadata recovery | Mario-encrypted VMDKs | **MEDIUM** | Low |
 | **P2** | Old server data consolidation | Separate server | **CERTAIN** | Low |
 | **P3** | VMDK structure recovery | ESXi datastores | **MEDIUM** | Low |
@@ -27,21 +31,24 @@
 
 ---
 
-## P0: Intermittent Encryption Data Carving (PRIMARY)
+## P0: Intermittent Encryption Data Carving + QuickBooks Recovery (PRIMARY)
 
-**Why this works:** Mario's newer variant uses intermittent/sparse encryption for files over 8 GB. Most VMDKs are well over this threshold, meaning large portions of each VMDK remain unencrypted and contain recoverable data.
+**Why this works:** Mario's newer variant uses intermittent/sparse encryption for files over 8 GB. Most VMDKs are well over this threshold, meaning large portions of each VMDK remain unencrypted and contain recoverable data. **QuickBooks data is the primary recovery target.**
 
-### Step 1: Inventory Encrypted VMDKs
+### Step 1: Inventory Encrypted Evidence (VMDKs + Veeam Backups)
 
 ```bash
 # On the ESXi datastore, find all encrypted VMDK files
 find /vmfs/volumes/ -name "*.emario" -o -name "*.omario" | sort > /tmp/encrypted_vmdk_list.txt
 
+# Also find Veeam backup files (may contain QB VMs)
+find /vmfs/volumes/ -name "*.vbk*" -o -name "*.vib*" -o -name "*.vrb*" | sort > /tmp/veeam_backup_list.txt
+
 # Also find any surviving VMDK descriptor files
 find /vmfs/volumes/ -name "*.vmdk" -not -name "*flat*" | sort > /tmp/vmdk_descriptors.txt
 
 # Record file sizes (critical for determining encryption mode)
-find /vmfs/volumes/ -name "*.emario" -o -name "*.omario" -exec ls -lh {} \; > /tmp/vmdk_sizes.txt
+find /vmfs/volumes/ \( -name "*.emario" -o -name "*.omario" -o -name "*.vbk" \) -exec ls -lh {} \; > /tmp/evidence_sizes.txt
 ```
 
 ### Step 2: Deploy Toolkit
@@ -75,11 +82,28 @@ cd ransom/
 - Files 50-200 GB: 80-95% recovery (larger ratio of plaintext)
 - Files > 200 GB: 90-98% recovery (vast majority is plaintext)
 
-### Step 4: Data Carving
+### Step 4: Data Carving (QuickBooks First)
 
 ```bash
-# Carve files from the largest/most valuable VMDKs first
-./carve-vmdk /path/to/vm-flat.vmdk.emario \
+# Carve QuickBooks files first (IIF, OFX, QBB via magic signatures)
+./carve-vmdk carve /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/carved_files/ \
+    --categories quickbooks
+
+# Deep scan for QBW/TLG files (no magic signature — uses content patterns)
+./qb-scan search /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/qb_hits/
+
+# Extract data windows around QB hits for manual inspection
+./qb-scan extract /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/qb_extracted/ \
+    --window 10M
+
+# Then carve all other file types
+./carve-vmdk carve /path/to/vm-flat.vmdk.emario \
     --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
     --output-dir /output/carved_files/ \
     --categories document database image archive
@@ -263,9 +287,12 @@ cat /output/wr_iocs/white_rabbit_campaign.yar
 Is the file a Mario-encrypted VMDK (.emario/.omario)?
 ├── YES
 │   ├── Is the file > 8 GB?
-│   │   ├── YES → P0: High recovery probability via intermittent encryption gaps
+│   │   ├── YES → P0: Entropy scan → carve (quickbooks first) → qb-scan for QBW/TLG
 │   │   └── NO → P4: Test Babuk keys (low probability), otherwise unrecoverable
 │   └── Run entropy analysis first to confirm encryption pattern
+├── Is it a Veeam backup file (.vbk/.vib/.vrb or .vbk.emario)?
+│   └── P0a: Same pipeline as VMDKs — scan → carve → qb-scan
+│       (Veeam files contain VM disk blocks; QB data may be inside)
 └── NO (White Rabbit .scrypt file)
     ├── Was the Windows machine imaged before reboot?
     │   ├── YES → P5: Attempt deleted file recovery from disk image

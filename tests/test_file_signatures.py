@@ -28,9 +28,9 @@ class TestSignatureCatalogue:
     """Verify the built-in signature database meets expectations."""
 
     def test_signature_count(self) -> None:
-        """The catalogue should contain at least 25 signatures."""
-        assert len(SIGNATURES) >= 25, (
-            f"Expected at least 25 signatures, found {len(SIGNATURES)}"
+        """The catalogue should contain at least 32 signatures."""
+        assert len(SIGNATURES) >= 32, (
+            f"Expected at least 32 signatures, found {len(SIGNATURES)}"
         )
 
     def test_all_signatures_have_required_fields(self) -> None:
@@ -246,3 +246,71 @@ class TestGetSignaturesByCategory:
         assert "JPEG" in names
         assert "PNG" in names
         assert len(names) >= 3  # JPEG + PNG + at least one more
+
+    def test_get_signatures_by_category_quickbooks(self) -> None:
+        """Filtering by 'quickbooks' should return QuickBooks signatures."""
+        qb_sigs = get_signatures_by_category("quickbooks")
+        assert len(qb_sigs) >= 5  # IIF, IIF Header, IIF Accounts, OFX, QBB
+        names = {sig.name for sig in qb_sigs}
+        assert "QuickBooks IIF" in names
+        assert "OFX Financial Data" in names
+        assert "QuickBooks Backup (QBB)" in names
+
+
+# ---------------------------------------------------------------------------
+# QuickBooks signatures
+# ---------------------------------------------------------------------------
+
+
+class TestQuickBooksSignatures:
+    """Test QuickBooks and financial file signature detection."""
+
+    def test_find_iif_trns_signature(self) -> None:
+        """find_signatures should detect QuickBooks IIF (!TRNS header)."""
+        data = b"!TRNS\tDATE\tACCNT\tNAME\tAMOUNT"
+        hits = find_signatures(data)
+        names = [sig.name for _, sig in hits]
+        assert "QuickBooks IIF" in names
+
+    def test_find_iif_hdr_signature(self) -> None:
+        """find_signatures should detect QuickBooks IIF (!HDR header)."""
+        data = b"!HDR\tPROD\tVER\tREL"
+        hits = find_signatures(data)
+        names = [sig.name for _, sig in hits]
+        assert "QuickBooks IIF (Header)" in names
+
+    def test_find_iif_accnt_signature(self) -> None:
+        """find_signatures should detect QuickBooks IIF (!ACCNT header)."""
+        data = b"!ACCNT\tNAME\tACCNTTYPE"
+        hits = find_signatures(data)
+        names = [sig.name for _, sig in hits]
+        assert "QuickBooks IIF (Accounts)" in names
+
+    def test_find_ofx_signature(self) -> None:
+        """find_signatures should detect OFX Financial Data."""
+        data = b"OFXHEADER:100\r\nDATA:OFXSGML\r\n"
+        hits = find_signatures(data)
+        names = [sig.name for _, sig in hits]
+        assert "OFX Financial Data" in names
+
+    def test_qbb_uses_zip_magic(self) -> None:
+        """QuickBooks QBB uses PK ZIP magic — should be detected as QBB
+        (among other ZIP-based formats)."""
+        data = b"PK\x03\x04" + b"\x00" * 100
+        hits = find_signatures(data)
+        names = [sig.name for _, sig in hits]
+        assert "QuickBooks Backup (QBB)" in names
+
+    def test_find_signature_at_iif(self) -> None:
+        """find_signature_at should recognise IIF at the start of data."""
+        data = b"!TRNS\tDATE\tACCNT"
+        sig = find_signature_at(data)
+        assert sig is not None
+        assert sig.category == "quickbooks"
+
+    def test_find_signature_at_ofx(self) -> None:
+        """find_signature_at should recognise OFX at the start of data."""
+        data = b"OFXHEADER:100\r\n"
+        sig = find_signature_at(data)
+        assert sig is not None
+        assert sig.name == "OFX Financial Data"

@@ -95,7 +95,8 @@ chmod +x "${SCRIPT_DIR}/scan-vmdk" \
          "${SCRIPT_DIR}/carve-vmdk" \
          "${SCRIPT_DIR}/analyze-emario" \
          "${SCRIPT_DIR}/test-babuk-keys" \
-         "${SCRIPT_DIR}/analyze-whiterabbit" 2>/dev/null || true
+         "${SCRIPT_DIR}/analyze-whiterabbit" \
+         "${SCRIPT_DIR}/qb-scan" 2>/dev/null || true
 success "CLI wrappers ready"
 
 # --- Self-test ---
@@ -111,8 +112,11 @@ SELF_TEST_OK=true
 "$PYTHON" -c "from tools.common.file_signatures import SIGNATURES; assert len(SIGNATURES) >= 25" 2>/dev/null && \
     success "  File signatures module OK ($(python3 -c 'from tools.common.file_signatures import SIGNATURES; print(len(SIGNATURES))') signatures)" || { error "  File signatures module FAILED"; SELF_TEST_OK=false; }
 
-"$PYTHON" -c "from tools.common.vmdk_parser import VMDKType" 2>/dev/null && \
+"$PYTHON" -c "from tools.common.vmdk_parser import VMDKType, find_evidence_files" 2>/dev/null && \
     success "  VMDK parser module OK" || { error "  VMDK parser module FAILED"; SELF_TEST_OK=false; }
+
+"$PYTHON" -c "from tools.quickbooks_scanner.scanner import QuickBooksScanner" 2>/dev/null && \
+    success "  QuickBooks scanner module OK" || { error "  QuickBooks scanner module FAILED"; SELF_TEST_OK=false; }
 
 "$PYTHON" -c "from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey" 2>/dev/null && \
     success "  Cryptography library OK (X25519)" || { error "  Cryptography library FAILED"; SELF_TEST_OK=false; }
@@ -129,6 +133,7 @@ if [ "$SELF_TEST_OK" = true ]; then
     echo "  Available tools:"
     echo "    ./scan-vmdk <file>              VMDK entropy analyzer"
     echo "    ./carve-vmdk <file>             VMDK data carver"
+    echo "    ./qb-scan <file>               QuickBooks content scanner"
     echo "    ./analyze-emario <file|dir>     Emario header analyzer"
     echo "    ./test-babuk-keys <file|dir>    Babuk key tester"
     echo "    ./analyze-whiterabbit <dir>     White Rabbit analyzer"

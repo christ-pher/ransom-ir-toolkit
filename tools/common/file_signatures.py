@@ -33,7 +33,7 @@ class FileSignature:
 
     category: str
     """Broad classification: 'document', 'image', 'archive', 'filesystem', 'database',
-    'email', 'windows', 'virtualization'."""
+    'email', 'windows', 'virtualization', 'quickbooks'."""
 
     magic: bytes
     """The magic byte sequence that identifies the file type."""
@@ -297,6 +297,53 @@ SIGNATURES: list[FileSignature] = [
         extension=".vhd",
         max_size=None,
     ),
+    FileSignature(
+        name="Veeam VBK backup",
+        category="virtualization",
+        magic=b"\x01\x00\x01\x00",
+        extension=".vbk",
+        max_size=None,
+    ),
+
+    # ------------------------------------------------------------------
+    # QuickBooks / Financial
+    # ------------------------------------------------------------------
+    FileSignature(
+        name="QuickBooks IIF",
+        category="quickbooks",
+        magic=b"!TRNS\t",
+        extension=".iif",
+        max_size=50_000_000,
+    ),
+    FileSignature(
+        name="QuickBooks IIF (Header)",
+        category="quickbooks",
+        magic=b"!HDR\t",
+        extension=".iif",
+        max_size=50_000_000,
+    ),
+    FileSignature(
+        name="QuickBooks IIF (Accounts)",
+        category="quickbooks",
+        magic=b"!ACCNT\t",
+        extension=".iif",
+        max_size=50_000_000,
+    ),
+    FileSignature(
+        name="OFX Financial Data",
+        category="quickbooks",
+        magic=b"OFXHEADER:",
+        extension=".ofx",
+        max_size=50_000_000,
+    ),
+    FileSignature(
+        name="QuickBooks Backup (QBB)",
+        category="quickbooks",
+        magic=b"PK\x03\x04",
+        extension=".qbb",
+        max_size=4_000_000_000,
+        footer=b"PK\x05\x06",
+    ),
 ]
 
 
@@ -407,7 +454,8 @@ def get_signatures_by_category(category: str) -> list[FileSignature]:
     ----------
     category:
         One of ``'document'``, ``'image'``, ``'archive'``, ``'filesystem'``,
-        ``'database'``, ``'email'``, ``'windows'``, ``'virtualization'``.
+        ``'database'``, ``'email'``, ``'windows'``, ``'virtualization'``,
+        ``'quickbooks'``.
 
     Returns
     -------

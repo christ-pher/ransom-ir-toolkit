@@ -38,7 +38,7 @@ from tools.common.entropy import (
 )
 from tools.common.report import create_progress, format_bytes
 from tools.common.safe_io import SafeReader, validate_evidence_path
-from tools.common.vmdk_parser import find_vmdk_files
+from tools.common.vmdk_parser import find_evidence_files, find_vmdk_files
 
 logger = logging.getLogger(__name__)
 
@@ -327,33 +327,40 @@ class VMDKEntropyAnalyzer:
     def batch_scan(
         self, directory: Path, skip_fine_scan: bool = False
     ) -> list[AnalysisResult]:
-        """Scan all VMDK files in a directory.
+        """Scan all evidence files in a directory.
+
+        Finds VMDKs, Veeam backup files (.vbk/.vib/.vrb), and
+        Mario-encrypted files (.emario/.omario).
 
         Parameters
         ----------
         directory:
-            Directory to scan for ``.vmdk`` files.
+            Directory to scan for evidence files.
         skip_fine_scan:
             If ``True``, skip fine boundary scanning on all files.
 
         Returns
         -------
         list[AnalysisResult]
-            One result per VMDK file found.
+            One result per evidence file found.
         """
-        vmdk_files = find_vmdk_files(directory)
-        if not vmdk_files:
-            logger.warning("No VMDK files found in %s", directory)
+        evidence_files = find_evidence_files(directory)
+        if not evidence_files:
+            logger.warning("No evidence files found in %s", directory)
             return []
 
-        logger.info("Batch scan: %d VMDK file(s) in %s", len(vmdk_files), directory)
+        logger.info(
+            "Batch scan: %d evidence file(s) in %s",
+            len(evidence_files),
+            directory,
+        )
         results: list[AnalysisResult] = []
-        for vmdk_path in vmdk_files:
+        for file_path in evidence_files:
             try:
-                result = self.scan(vmdk_path, skip_fine_scan=skip_fine_scan)
+                result = self.scan(file_path, skip_fine_scan=skip_fine_scan)
                 results.append(result)
             except Exception:
-                logger.exception("Failed to scan %s", vmdk_path)
+                logger.exception("Failed to scan %s", file_path)
 
         return results
 

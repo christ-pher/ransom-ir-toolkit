@@ -127,12 +127,32 @@ cat /output/wr_iocs/ioc_report.md
 cat /output/wr_iocs/white_rabbit_campaign.yar
 ```
 
+### qb-scan — Search for QuickBooks data in encrypted files
+
+```bash
+# Search for QB indicators using entropy analysis
+./qb-scan search /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/qb_hits/
+
+# Search entire file without analysis (slower)
+./qb-scan search /path/to/file.vbk.emario \
+    --output-dir /output/qb_hits/
+
+# Extract data windows around QB hits for manual inspection
+./qb-scan extract /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/qb_extracted/ \
+    --window 10M
+```
+
 ### Direct Python module invocation (alternative)
 
 ```bash
 source venv/bin/activate
 python3 -m tools.vmdk_entropy_analyzer.cli --help
 python3 -m tools.vmdk_data_carver.cli --help
+python3 -m tools.quickbooks_scanner.cli --help
 python3 -m tools.emario_header_analyzer.cli --help
 python3 -m tools.babuk_key_tester.cli --help
 python3 -m tools.white_rabbit_analyzer.cli --help
@@ -140,7 +160,105 @@ python3 -m tools.white_rabbit_analyzer.cli --help
 
 ---
 
-## 4. Recovery Workflow (Priority Order)
+## 4. QuickBooks Recovery (Top Priority)
+
+**The client's most critical data is QuickBooks.** Company files (.QBW), backups (.QBB), transaction logs (.TLG), and interchange files (.IIF) are the primary recovery targets. QuickBooks data may live inside Mario-encrypted VMDKs and also inside Mario-encrypted Veeam backup files (.vbk/.vib/.vrb).
+
+### QuickBooks File Types
+
+| Extension | Format | Recovery Method |
+|-----------|--------|-----------------|
+| .QBW | Pervasive PSQL database (no universal magic) | `qb-scan` content search |
+| .QBB | ZIP archive containing QBW | `carve-vmdk --categories quickbooks` (PK header) |
+| .QBM | Portable company file | `qb-scan` content search |
+| .TLG | Transaction log | `qb-scan` content search |
+| .IIF | Tab-delimited text interchange | `carve-vmdk --categories quickbooks` (!TRNS/!HDR magic) |
+| .OFX | Open Financial Exchange | `carve-vmdk --categories quickbooks` (OFXHEADER magic) |
+
+### Step-by-Step QuickBooks Recovery
+
+```bash
+# 1. Scan encrypted VMDKs for entropy map
+./scan-vmdk scan /path/to/vm-flat.vmdk.emario \
+    --output-dir /output/entropy_results/
+
+# 2. Carve QuickBooks files with magic-byte signatures (IIF, OFX, QBB)
+./carve-vmdk carve /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/carved_files/ \
+    --categories quickbooks
+
+# 3. Deep search for QBW/TLG files (no clean magic signature)
+./qb-scan search /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/qb_hits/
+
+# 4. Extract data windows around QB hits for manual inspection
+./qb-scan extract /path/to/vm-flat.vmdk.emario \
+    --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
+    --output-dir /output/qb_extracted/ \
+    --window 10M
+
+# 5. Also scan Veeam backup files if present
+./scan-vmdk scan /path/to/backup.vbk.emario \
+    --output-dir /output/entropy_results/
+./qb-scan search /path/to/backup.vbk.emario \
+    --analysis-file /output/entropy_results/backup.vbk.emario.json \
+    --output-dir /output/qb_hits/
+```
+
+### Where QuickBooks Files Live on Windows VMs
+
+```
+C:\Users\Public\Documents\Intuit\QuickBooks\Company Files\
+C:\Users\<username>\Documents\Intuit\QuickBooks\
+C:\ProgramData\Intuit\QuickBooks\
+```
+
+### Validating Recovered QuickBooks Data
+
+- **QBB files** are ZIP archives — if recovered, unzip to get the QBW inside: `unzip recovered.qbb`
+- **IIF files** are plain text — open with any text editor to verify content
+- **QBW files** — look for "Intuit" and "QuickBooks" strings; valid files can be opened in QuickBooks Desktop
+- **TLG files** — pair with the matching QBW for transaction replay in QuickBooks
+- **Partial QBW recovery** — if the QBW is incomplete, look for the TLG (transaction log) which can replay transactions into an older QBW backup
+
+---
+
+## 4a. Veeam Backup Recovery
+
+If the client used Veeam Backup & Replication, backup files may contain the QuickBooks VMs. Veeam files (.vbk full, .vib incremental, .vrb reverse incremental) can be scanned with the same entropy analysis + carving pipeline.
+
+```bash
+# 1. Find Veeam backup files
+find /path/to/backups/ -name "*.vbk" -o -name "*.vib" -o -name "*.vrb" -o \
+    -name "*.vbk.emario" -o -name "*.vib.emario" | sort
+
+# 2. Scan Veeam files for encryption pattern
+./scan-vmdk scan /path/to/backup.vbk.emario \
+    --output-dir /output/entropy_results/
+
+# 3. Carve recoverable files from plaintext regions
+./carve-vmdk carve /path/to/backup.vbk.emario \
+    --analysis-file /output/entropy_results/backup.vbk.emario.json \
+    --output-dir /output/carved_files/ \
+    --categories quickbooks document database
+
+# 4. Search for QB data inside Veeam backup blocks
+./qb-scan search /path/to/backup.vbk.emario \
+    --analysis-file /output/entropy_results/backup.vbk.emario.json \
+    --output-dir /output/qb_hits/
+
+# 5. Batch scan all evidence files at once (VMDKs + Veeam + encrypted)
+./scan-vmdk batch /path/to/evidence/ \
+    --output-dir /output/entropy_results/
+```
+
+**Note:** If Veeam compression was enabled, direct carving may find fewer results — use PhotoRec with skip maps as a fallback for compressed backup blocks.
+
+---
+
+## 5. Recovery Workflow (Priority Order)
 
 ### P0: Intermittent Encryption Data Carving [HIGH probability]
 
@@ -222,6 +340,7 @@ What are you looking at?
 ├── Mario-encrypted VMDK (.emario / .omario)?
 │   ├── File > 8 GB?
 │   │   ├── YES → P0: Entropy scan → carve plaintext regions (50-95% recovery)
+│   │   │         Then: ./qb-scan to find QuickBooks data specifically
 │   │   └── NO  → P4: Test Babuk keys (unlikely match), otherwise unrecoverable
 │   │
 │   ├── VMDK descriptor file (.vmdk, not *flat*)?
@@ -229,6 +348,10 @@ What are you looking at?
 │   │
 │   └── Not sure about encryption mode?
 │       └── Run ./analyze-emario to check header → .emario = full, .omario = intermittent
+│
+├── Veeam backup file (.vbk / .vib / .vrb / .vbk.emario)?
+│   └── Scan with ./scan-vmdk → carve → ./qb-scan for QuickBooks data
+│       (Same pipeline as VMDKs — Veeam files contain VM disk blocks)
 │
 ├── White Rabbit encrypted file (.scrypt)?
 │   ├── Windows disk available and not reimaged?
@@ -415,27 +538,45 @@ strace -e openat ./scan-vmdk /path/to/file.emario --output-dir /tmp/test/ 2>&1 |
 ```bash
 # === SETUP ===
 tar xzf ransom-toolkit.tar.gz && cd ransom/ && ./deploy.sh
+mkdir -p /output/{entropy_results,carved_files,skip_maps,qb_hits,qb_extracted,emario_analysis,key_test_results,wr_iocs,photorec_carved}
 
-# === MARIO RECOVERY (do these in order) ===
-# 1. Inventory
-find /vmfs/volumes/ -name "*.emario" -o -name "*.omario" -exec ls -lh {} \;
+# === QUICKBOOKS RECOVERY (top priority) ===
+# 1. Inventory all encrypted files (VMDKs + Veeam backups)
+find /vmfs/volumes/ -name "*.emario" -o -name "*.omario" -o -name "*.vbk*" -exec ls -lh {} \;
 
-# 2. Scan all VMDKs
+# 2. Scan all evidence files (VMDKs + Veeam + encrypted)
 ./scan-vmdk batch /vmfs/volumes/datastore1/ --output-dir /output/entropy_results/
 
-# 3. Carve from highest-value VMDKs first
-./carve-vmdk /path/to/largest.vmdk.emario \
+# 3. Carve QuickBooks files first
+./carve-vmdk carve /path/to/largest.vmdk.emario \
+    --analysis-file /output/entropy_results/largest.vmdk.emario.json \
+    --output-dir /output/carved_files/ \
+    --categories quickbooks
+
+# 4. Deep QB search (finds QBW/TLG without magic signatures)
+./qb-scan search /path/to/largest.vmdk.emario \
+    --analysis-file /output/entropy_results/largest.vmdk.emario.json \
+    --output-dir /output/qb_hits/
+
+# 5. Extract QB data windows for manual inspection
+./qb-scan extract /path/to/largest.vmdk.emario \
+    --analysis-file /output/entropy_results/largest.vmdk.emario.json \
+    --output-dir /output/qb_extracted/ --window 10M
+
+# === GENERAL DATA RECOVERY ===
+# 6. Carve all file types from highest-value VMDKs
+./carve-vmdk carve /path/to/largest.vmdk.emario \
     --analysis-file /output/entropy_results/largest.vmdk.emario.json \
     --output-dir /output/carved_files/ \
     --categories document database image archive
 
-# 4. Generate skip map + run PhotoRec
+# 7. Generate skip map + run PhotoRec
 ./carve-vmdk skip-map /path/to/vm.vmdk.emario \
     --analysis-file /output/entropy_results/vm.vmdk.emario.json \
     --output /output/skip_maps/vm.map
 ./external-tools/testdisk-7.2/photorec_static /d /output/photorec_carved/ /path/to/vm.vmdk.emario
 
-# 5. Test Babuk keys (free, run in background)
+# 8. Test Babuk keys (free, run in background)
 ./test-babuk-keys batch /vmfs/volumes/datastore1/ --output-dir /output/key_test_results/ --stop-on-match
 
 # === WHITE RABBIT IOCs ===
