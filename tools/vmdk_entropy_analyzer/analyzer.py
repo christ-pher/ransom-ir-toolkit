@@ -21,6 +21,7 @@ scan misses boundary details needed for data carving.
 
 from __future__ import annotations
 
+import bisect
 import logging
 import time
 from dataclasses import dataclass, field
@@ -672,14 +673,16 @@ class VMDKEntropyAnalyzer:
             return False
 
         # Build the unified block list
+        # Pre-index fine results by offset for O(log n) lookup via bisect
+        fine_offsets_sorted = [fr.offset for fr in fine]
         blocks: list[EntropyResult] = []
 
         for cr in coarse:
             if fine_ranges and _is_covered_by_fine(cr.offset, cr.size):
-                # Use fine blocks that fall within this coarse block's span
-                for fr in fine:
-                    if fr.offset >= cr.offset and fr.offset < cr.offset + cr.size:
-                        blocks.append(fr)
+                # Use bisect to find fine blocks within this coarse block's span
+                lo = bisect.bisect_left(fine_offsets_sorted, cr.offset)
+                hi = bisect.bisect_left(fine_offsets_sorted, cr.offset + cr.size)
+                blocks.extend(fine[lo:hi])
             else:
                 blocks.append(cr)
 
