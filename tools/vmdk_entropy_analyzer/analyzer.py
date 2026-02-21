@@ -355,8 +355,17 @@ class VMDKEntropyAnalyzer:
             directory,
         )
         results: list[AnalysisResult] = []
-        for file_path in evidence_files:
+        num_files = len(evidence_files)
+        for file_idx, file_path in enumerate(evidence_files, 1):
             try:
+                file_size = file_path.stat().st_size
+                logger.info(
+                    "Scanning file %d/%d: %s (%s)",
+                    file_idx,
+                    num_files,
+                    file_path.name,
+                    format_bytes(file_size),
+                )
                 result = self.scan(file_path, skip_fine_scan=skip_fine_scan)
                 results.append(result)
             except Exception:
@@ -517,25 +526,79 @@ class VMDKEntropyAnalyzer:
         )
 
         # Scan each merged range at fine granularity
+        total_fine_blocks = sum(
+            (e - s + fine_block - 1) // fine_block for s, e in merged_ranges
+        )
         fine_results: list[EntropyResult] = []
-        for range_start, range_end in merged_ranges:
-            offset = range_start
-            while offset < range_end:
-                read_size = min(fine_block, range_end - offset)
-                chunk = reader.read_chunk(offset, read_size)
-                if not chunk:
-                    break
-                ent = calculate_entropy(chunk)
-                cls = classify_entropy(ent, threshold)
-                fine_results.append(
-                    EntropyResult(
-                        offset=offset,
-                        size=len(chunk),
-                        entropy=ent,
-                        classification=cls,
+        num_ranges = len(merged_ranges)
+
+        try:
+            progress = create_progress("Fine scan")
+            with progress:
+                task = progress.add_task("Scanning", total=total_fine_blocks)
+                for range_idx, (range_start, range_end) in enumerate(merged_ranges, 1):
+                    logger.info(
+                        "Fine scan range %d/%d: offset %d - %d (%s)",
+                        range_idx,
+                        num_ranges,
+                        range_start,
+                        range_end,
+                        format_bytes(range_end - range_start),
                     )
+                    offset = range_start
+                    while offset < range_end:
+                        read_size = min(fine_block, range_end - offset)
+                        chunk = reader.read_chunk(offset, read_size)
+                        if not chunk:
+                            break
+                        ent = calculate_entropy(chunk)
+                        cls = classify_entropy(ent, threshold)
+                        fine_results.append(
+                            EntropyResult(
+                                offset=offset,
+                                size=len(chunk),
+                                entropy=ent,
+                                classification=cls,
+                            )
+                        )
+                        offset += len(chunk)
+                        progress.update(task, advance=1)
+        except RuntimeError:
+            logger.info("Progress bars unavailable; scanning without visual feedback")
+            block_count = 0
+            for range_idx, (range_start, range_end) in enumerate(merged_ranges, 1):
+                logger.info(
+                    "Fine scan range %d/%d: offset %d - %d (%s)",
+                    range_idx,
+                    num_ranges,
+                    range_start,
+                    range_end,
+                    format_bytes(range_end - range_start),
                 )
-                offset += len(chunk)
+                offset = range_start
+                while offset < range_end:
+                    read_size = min(fine_block, range_end - offset)
+                    chunk = reader.read_chunk(offset, read_size)
+                    if not chunk:
+                        break
+                    ent = calculate_entropy(chunk)
+                    cls = classify_entropy(ent, threshold)
+                    fine_results.append(
+                        EntropyResult(
+                            offset=offset,
+                            size=len(chunk),
+                            entropy=ent,
+                            classification=cls,
+                        )
+                    )
+                    offset += len(chunk)
+                    block_count += 1
+                    if block_count % 10_000 == 0:
+                        logger.info(
+                            "Fine scan progress: %d / %d blocks",
+                            block_count,
+                            total_fine_blocks,
+                        )
 
         # Sort by offset for deterministic merging
         fine_results.sort(key=lambda r: r.offset)
@@ -566,6 +629,12 @@ class VMDKEntropyAnalyzer:
         list[RegionInfo]
             Contiguous, non-overlapping regions covering the full file.
         """
+        logger.info(
+            "Merging %d coarse + %d fine blocks into regions...",
+            len(coarse),
+            len(fine),
+        )
+
         if not coarse:
             return []
 
