@@ -179,33 +179,73 @@ def print_progress_table(items: list[dict], columns: list[str]) -> None:
             print(row)
 
 
-def create_progress(description: str = "Scanning") -> Progress:
+class _PlainProgress:
+    """Minimal plain-text progress fallback when ``rich`` is not installed.
+
+    Implements the subset of the :class:`rich.progress.Progress` API used
+    by toolkit scanners: context-manager protocol, ``add_task``, and
+    ``update``.  Progress is printed to *stderr* so it doesn't pollute
+    piped output.
+    """
+
+    def __init__(self, description: str = "Scanning") -> None:
+        self._description = description
+        self._tasks: dict[int, dict[str, Any]] = {}
+        self._next_id = 0
+
+    # -- context manager -----------------------------------------------------
+    def __enter__(self) -> "_PlainProgress":
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        # Print a final newline so the next output isn't on the same line.
+        import sys
+        print(file=sys.stderr)
+
+    # -- task API ------------------------------------------------------------
+    def add_task(self, description: str, total: float = 0) -> int:
+        tid = self._next_id
+        self._next_id += 1
+        self._tasks[tid] = {
+            "description": description,
+            "total": total,
+            "completed": 0.0,
+            "last_pct": -1,
+        }
+        import sys
+        print(f"{description}: 0%", end="", flush=True, file=sys.stderr)
+        return tid
+
+    def update(self, task_id: int, advance: float = 0) -> None:
+        t = self._tasks[task_id]
+        t["completed"] += advance
+        if t["total"] > 0:
+            pct = int(t["completed"] / t["total"] * 100)
+            # Only reprint every 5% to avoid flooding the terminal.
+            if pct // 5 != t["last_pct"] // 5:
+                t["last_pct"] = pct
+                import sys
+                print(f"\r{t['description']}: {pct}%", end="", flush=True, file=sys.stderr)
+
+
+def create_progress(description: str = "Scanning") -> Progress | _PlainProgress:
     """Create a configured :class:`rich.progress.Progress` bar.
 
     The returned progress bar is suitable for long-running file-scanning
     operations and shows a spinner, description, bar, count, elapsed time,
     and estimated time remaining.
 
+    When ``rich`` is not installed a lightweight plain-text fallback is
+    returned instead, so callers never need to handle the missing-dependency
+    case themselves.
+
     Parameters
     ----------
     description:
         Label displayed next to the progress bar.
-
-    Returns
-    -------
-    rich.progress.Progress
-        A ready-to-use progress context manager.
-
-    Raises
-    ------
-    RuntimeError
-        If ``rich`` is not installed.
     """
     if not _RICH_AVAILABLE:
-        raise RuntimeError(
-            "rich is required for progress bars; install it with: "
-            "pip install rich"
-        )
+        return _PlainProgress(description)
 
     return Progress(
         SpinnerColumn(),
