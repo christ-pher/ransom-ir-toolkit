@@ -9,9 +9,12 @@ Designed for Python 3.10+ with no external dependencies.
 
 from __future__ import annotations
 
+import json
 import logging
+import shutil
 import zipfile
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -172,3 +175,71 @@ def validate_ofx(path: Path) -> ValidationResult:
         path=path, file_type="ofx", valid=False,
         classification="invalid_ofx", size=size,
     )
+
+
+# ---------------------------------------------------------------------------
+# Directory scanner
+# ---------------------------------------------------------------------------
+
+_VALIDATORS = {
+    ".qbb": validate_qbb,
+    ".iif": validate_iif,
+    ".ofx": validate_ofx,
+}
+
+
+def validate_directory(
+    input_dir: Path,
+    output_dir: Path,
+) -> list[ValidationResult]:
+    """Validate all QB-category files in a directory and copy valid ones.
+
+    Scans for .qbb, .iif, and .ofx files. Valid files are copied to
+    subdirectories of *output_dir* organized by type (qbb/, iif/, ofx/).
+    A JSON report is written to output_dir/validation_report.json.
+    """
+    input_dir = Path(input_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    results: list[ValidationResult] = []
+
+    for ext, validator in _VALIDATORS.items():
+        for file_path in sorted(input_dir.glob(f"*{ext}")):
+            result = validator(file_path)
+
+            if result.valid:
+                dest_dir = output_dir / ext.lstrip(".")
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = dest_dir / file_path.name
+                shutil.copy2(file_path, dest)
+                result.output_path = dest
+
+            results.append(result)
+
+    # Write JSON report
+    report_data = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "input_dir": str(input_dir),
+        "output_dir": str(output_dir),
+        "total_files": len(results),
+        "valid_files": sum(1 for r in results if r.valid),
+        "results": [
+            {
+                "path": str(r.path),
+                "file_type": r.file_type,
+                "valid": r.valid,
+                "classification": r.classification,
+                "size": r.size,
+                "details": r.details,
+                "output_path": str(r.output_path) if r.output_path else None,
+            }
+            for r in results
+        ],
+    }
+    report_path = output_dir / "validation_report.json"
+    report_path.write_text(
+        json.dumps(report_data, indent=2) + "\n", encoding="utf-8"
+    )
+
+    return results

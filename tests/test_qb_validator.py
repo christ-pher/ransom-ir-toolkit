@@ -9,6 +9,7 @@ import pytest
 
 from tools.qb_validator.validator import (
     ValidationResult,
+    validate_directory,
     validate_iif,
     validate_ofx,
     validate_qbb,
@@ -225,3 +226,98 @@ class TestValidateOFX:
     def test_ofx_file_type(self, valid_ofx: Path) -> None:
         result = validate_ofx(valid_ofx)
         assert result.file_type == "ofx"
+
+
+# ---------------------------------------------------------------------------
+# Directory scanner fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def carved_dir(tmp_path: Path) -> Path:
+    """Create a directory mimicking carve-vmdk output with mixed files."""
+    carved = tmp_path / "carved_files"
+    carved.mkdir()
+
+    # Valid QBB
+    with zipfile.ZipFile(carved / "000000001000_QuickBooks_Backup_(QBB).qbb", "w") as zf:
+        zf.writestr("MyCompany.QBW", b"\x00" * 500)
+
+    # Office doc false positive
+    with zipfile.ZipFile(carved / "000000002000_QuickBooks_Backup_(QBB).qbb", "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("word/document.xml", "<doc/>")
+
+    # Valid IIF
+    (carved / "000000003000_QuickBooks_IIF.iif").write_text(
+        "!TRNS\tTRNSTYPE\tDATE\n", encoding="ascii"
+    )
+
+    # Valid OFX
+    (carved / "000000004000_OFX_Financial_Data.ofx").write_text(
+        "OFXHEADER:100\n", encoding="ascii"
+    )
+
+    return carved
+
+
+# ---------------------------------------------------------------------------
+# Directory scanner tests
+# ---------------------------------------------------------------------------
+
+
+class TestValidateDirectory:
+    """Test directory-level validation and file sorting."""
+
+    def test_finds_all_files(self, carved_dir: Path, tmp_path: Path) -> None:
+        output = tmp_path / "validated"
+        results = validate_directory(carved_dir, output)
+        assert len(results) == 4
+
+    def test_identifies_valid_qbb(self, carved_dir: Path, tmp_path: Path) -> None:
+        output = tmp_path / "validated"
+        results = validate_directory(carved_dir, output)
+        valid_qbbs = [r for r in results if r.valid and r.file_type == "qbb"]
+        assert len(valid_qbbs) == 1
+
+    def test_copies_valid_qbb(self, carved_dir: Path, tmp_path: Path) -> None:
+        output = tmp_path / "validated"
+        results = validate_directory(carved_dir, output)
+        valid_qbbs = [r for r in results if r.valid and r.file_type == "qbb"]
+        assert valid_qbbs[0].output_path is not None
+        assert valid_qbbs[0].output_path.exists()
+        assert valid_qbbs[0].output_path.parent.name == "qbb"
+
+    def test_copies_valid_iif(self, carved_dir: Path, tmp_path: Path) -> None:
+        output = tmp_path / "validated"
+        results = validate_directory(carved_dir, output)
+        valid_iifs = [r for r in results if r.valid and r.file_type == "iif"]
+        assert len(valid_iifs) == 1
+        assert valid_iifs[0].output_path.parent.name == "iif"
+
+    def test_copies_valid_ofx(self, carved_dir: Path, tmp_path: Path) -> None:
+        output = tmp_path / "validated"
+        results = validate_directory(carved_dir, output)
+        valid_ofxs = [r for r in results if r.valid and r.file_type == "ofx"]
+        assert len(valid_ofxs) == 1
+        assert valid_ofxs[0].output_path.parent.name == "ofx"
+
+    def test_does_not_copy_false_positives(self, carved_dir: Path, tmp_path: Path) -> None:
+        output = tmp_path / "validated"
+        results = validate_directory(carved_dir, output)
+        false_positives = [r for r in results if not r.valid]
+        for fp in false_positives:
+            assert fp.output_path is None
+
+    def test_writes_json_report(self, carved_dir: Path, tmp_path: Path) -> None:
+        output = tmp_path / "validated"
+        validate_directory(carved_dir, output)
+        report = output / "validation_report.json"
+        assert report.exists()
+
+    def test_empty_directory(self, tmp_path: Path) -> None:
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        output = tmp_path / "validated"
+        results = validate_directory(empty, output)
+        assert len(results) == 0
