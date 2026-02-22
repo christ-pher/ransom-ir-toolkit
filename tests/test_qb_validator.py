@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import io
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from tools.qb_validator.validator import ValidationResult, validate_qbb
+from tools.qb_validator.validator import (
+    ValidationResult,
+    validate_iif,
+    validate_ofx,
+    validate_qbb,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -107,3 +111,117 @@ class TestValidateQBB:
     def test_result_has_path(self, valid_qbb: Path) -> None:
         result = validate_qbb(valid_qbb)
         assert result.path == valid_qbb
+
+
+# ---------------------------------------------------------------------------
+# IIF fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def valid_iif_trns(tmp_path: Path) -> Path:
+    """Create a valid IIF file starting with !TRNS header."""
+    iif_path = tmp_path / "transactions.iif"
+    iif_path.write_text("!TRNS\tTRNSTYPE\tDATE\tACCNT\tAMOUNT\n", encoding="ascii")
+    return iif_path
+
+
+@pytest.fixture()
+def valid_iif_hdr(tmp_path: Path) -> Path:
+    """Create a valid IIF file starting with !HDR header."""
+    iif_path = tmp_path / "header.iif"
+    iif_path.write_text("!HDR\tPROD\tVER\n", encoding="ascii")
+    return iif_path
+
+
+@pytest.fixture()
+def invalid_iif(tmp_path: Path) -> Path:
+    """Create an invalid IIF file (wrong content)."""
+    iif_path = tmp_path / "not_iif.iif"
+    iif_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+    return iif_path
+
+
+# ---------------------------------------------------------------------------
+# OFX fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def valid_ofx(tmp_path: Path) -> Path:
+    """Create a valid OFX file."""
+    ofx_path = tmp_path / "bank.ofx"
+    ofx_path.write_text("OFXHEADER:100\nDATA:OFXSGML\n", encoding="ascii")
+    return ofx_path
+
+
+@pytest.fixture()
+def valid_ofx_xml(tmp_path: Path) -> Path:
+    """Create a valid XML-based OFX file."""
+    ofx_path = tmp_path / "bank_xml.ofx"
+    ofx_path.write_text("<?OFX OFXHEADER=\"200\"?>\n<OFX>\n</OFX>\n", encoding="ascii")
+    return ofx_path
+
+
+@pytest.fixture()
+def invalid_ofx(tmp_path: Path) -> Path:
+    """Create an invalid OFX file."""
+    ofx_path = tmp_path / "not_ofx.ofx"
+    ofx_path.write_bytes(b"\x00\x01\x02\x03" * 50)
+    return ofx_path
+
+
+# ---------------------------------------------------------------------------
+# IIF validation tests
+# ---------------------------------------------------------------------------
+
+
+class TestValidateIIF:
+    """Test IIF file validation."""
+
+    def test_valid_iif_trns(self, valid_iif_trns: Path) -> None:
+        result = validate_iif(valid_iif_trns)
+        assert result.valid is True
+        assert result.classification == "valid_iif"
+
+    def test_valid_iif_hdr(self, valid_iif_hdr: Path) -> None:
+        result = validate_iif(valid_iif_hdr)
+        assert result.valid is True
+        assert result.classification == "valid_iif"
+
+    def test_invalid_iif(self, invalid_iif: Path) -> None:
+        result = validate_iif(invalid_iif)
+        assert result.valid is False
+        assert result.classification == "invalid_iif"
+
+    def test_iif_file_type(self, valid_iif_trns: Path) -> None:
+        result = validate_iif(valid_iif_trns)
+        assert result.file_type == "iif"
+
+
+# ---------------------------------------------------------------------------
+# OFX validation tests
+# ---------------------------------------------------------------------------
+
+
+class TestValidateOFX:
+    """Test OFX file validation."""
+
+    def test_valid_ofx_sgml(self, valid_ofx: Path) -> None:
+        result = validate_ofx(valid_ofx)
+        assert result.valid is True
+        assert result.classification == "valid_ofx"
+
+    def test_valid_ofx_xml(self, valid_ofx_xml: Path) -> None:
+        result = validate_ofx(valid_ofx_xml)
+        assert result.valid is True
+        assert result.classification == "valid_ofx"
+
+    def test_invalid_ofx(self, invalid_ofx: Path) -> None:
+        result = validate_ofx(invalid_ofx)
+        assert result.valid is False
+        assert result.classification == "invalid_ofx"
+
+    def test_ofx_file_type(self, valid_ofx: Path) -> None:
+        result = validate_ofx(valid_ofx)
+        assert result.file_type == "ofx"

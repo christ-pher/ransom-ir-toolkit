@@ -96,3 +96,79 @@ def validate_qbb(path: Path) -> ValidationResult:
         classification="unknown_zip", size=size,
         details={"contents": names[:10]},
     )
+
+
+# ---------------------------------------------------------------------------
+# IIF validation
+# ---------------------------------------------------------------------------
+
+_IIF_MAGICS: tuple[bytes, ...] = (b"!TRNS\t", b"!HDR\t", b"!ACCNT\t")
+
+_READ_HEAD = 1024  # bytes to read for header checks
+
+
+def validate_iif(path: Path) -> ValidationResult:
+    """Validate a carved .iif file by checking its header bytes."""
+    size = path.stat().st_size
+
+    try:
+        head = path.read_bytes()[:_READ_HEAD]
+    except OSError as exc:
+        return ValidationResult(
+            path=path, file_type="iif", valid=False,
+            classification="invalid_iif", size=size,
+            details={"error": str(exc)},
+        )
+
+    # Check magic header
+    if not any(head.startswith(m) for m in _IIF_MAGICS):
+        return ValidationResult(
+            path=path, file_type="iif", valid=False,
+            classification="invalid_iif", size=size,
+        )
+
+    # Verify text is decodable
+    try:
+        head.decode("utf-8")
+    except UnicodeDecodeError:
+        return ValidationResult(
+            path=path, file_type="iif", valid=False,
+            classification="invalid_iif", size=size,
+            details={"error": "Header not valid UTF-8"},
+        )
+
+    return ValidationResult(
+        path=path, file_type="iif", valid=True,
+        classification="valid_iif", size=size,
+    )
+
+
+# ---------------------------------------------------------------------------
+# OFX validation
+# ---------------------------------------------------------------------------
+
+
+def validate_ofx(path: Path) -> ValidationResult:
+    """Validate a carved .ofx file by checking its header bytes."""
+    size = path.stat().st_size
+
+    try:
+        head = path.read_bytes()[:_READ_HEAD]
+    except OSError as exc:
+        return ValidationResult(
+            path=path, file_type="ofx", valid=False,
+            classification="invalid_ofx", size=size,
+            details={"error": str(exc)},
+        )
+
+    # Check for SGML-based OFX or XML-based OFX
+    if head.startswith(b"OFXHEADER:") or head.startswith(b"<?OFX"):
+        return ValidationResult(
+            path=path, file_type="ofx", valid=True,
+            classification="valid_ofx", size=size,
+        )
+
+    return ValidationResult(
+        path=path, file_type="ofx", valid=False,
+        classification="invalid_ofx", size=size,
+    )
