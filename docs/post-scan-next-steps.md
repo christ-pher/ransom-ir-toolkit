@@ -89,6 +89,14 @@ Primary recovery path. Uses 50+ file signatures to extract recognizable files fr
 
 **Categories available**: document (PDF, DOCX, XLSX, PPTX, RTF), image (JPEG, PNG, GIF, BMP, TIFF), database (SQLite, NTFS MFT, ext4 superblocks), virtualization (VMDK, VHD, Veeam VBK), archive, quickbooks.
 
+After carving, validate QuickBooks files to filter false positives (the QBB signature `PK\x03\x04` is shared by all ZIP-based formats):
+
+```bash
+./qb-validate /output/carved/ --output-dir /output/validated_qb/
+```
+
+The validator classifies each `.qbb` file by inspecting ZIP contents — separating real QBBs from Office documents, Java archives, and corrupt fragments. Valid files are copied to `validated_qb/qbb/`, `validated_qb/iif/`, and `validated_qb/ofx/`.
+
 ### Step 2 (P0a): QuickBooks Deep Search
 
 Run in parallel with Step 1 if the client uses QuickBooks. QB files (`.QBW`) don't have universal magic signatures, so they need specialized scanning.

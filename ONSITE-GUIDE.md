@@ -188,6 +188,10 @@ python3 -m tools.white_rabbit_analyzer.cli --help
     --output-dir /output/carved_files/ \
     --categories quickbooks
 
+# 2b. Validate carved QB files (filter false positives)
+./qb-validate /output/carved_files/ \
+    --output-dir /output/validated_qb/
+
 # 3. Deep search for QBW/TLG files (no clean magic signature)
 ./qb-scan search /path/to/vm-flat.vmdk.emario \
     --analysis-file /output/entropy_results/vm-flat.vmdk.emario.json \
@@ -552,6 +556,9 @@ find /vmfs/volumes/ -name "*.emario" -o -name "*.omario" -o -name "*.vbk*" -exec
     --analysis-file /output/entropy_results/largest.vmdk.emario.json \
     --output-dir /output/carved_files/ \
     --categories quickbooks
+
+# 3b. Validate carved QB files (filter false positives from step 3)
+./qb-validate /output/carved_files/ --output-dir /output/validated_qb/
 
 # 4. Deep QB search (finds QBW/TLG without magic signatures)
 ./qb-scan search /path/to/largest.vmdk.emario \
