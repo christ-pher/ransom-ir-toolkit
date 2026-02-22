@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# qb-validate - QuickBooks File Validator wrapper
+# Validate carved QuickBooks files and sort valid ones.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+    source "${SCRIPT_DIR}/venv/bin/activate"
+fi
+cd "$SCRIPT_DIR"
+exec python3 -m tools.qb_validator.cli "$@"
